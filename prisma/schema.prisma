@@ -1,0 +1,85 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum PipelineStatus {
+  AWAITING_INGESTION
+  AUTO_APPROVED
+  FLAGGED_FOR_REVIEW
+  COMMITTED
+  ARCHIVED
+}
+
+enum ValidationPriority {
+  LOW
+  NORMAL
+  HIGH
+  CRITICAL
+}
+
+model Document {
+  id                 String              @id @default(uuid()) @db.Uuid
+  rawText            String              @map("raw_text") @db.Text
+  docType            String              @default("Unclassified") @map("doc_type") @db.VarChar(100)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz
+  
+  // Relations
+  telemetry          PipelineTelemetry?
+  verificationMatrix VerificationMatrix?
+  auditLogs          AuditLog[]
+
+  @@map("documents")
+}
+
+model PipelineTelemetry {
+  id              BigInt   @id @default(autoincrement())
+  documentId      String   @unique @map("document_id") @db.Uuid
+  confidenceScore Float    @map("confidence_score") @db.DoublePrecision // Bound validation handled in code boundary
+  wordCount       Int      @map("word_count") @db.Integer
+  processingMs    Int      @map("processing_ms") @db.Integer
+  modelVersion    String   @default("llama3:latest") @map("model_version") @db.VarChar(50)
+  
+  // Relation link
+  document        Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("pipeline_telemetry")
+}
+
+model VerificationMatrix {
+  id             BigInt             @id @default(autoincrement())
+  documentId     String             @unique @map("document_id") @db.Uuid
+  systemStatus   PipelineStatus     @default(AWAITING_INGESTION) @map("system_status")
+  priorityLevel  ValidationPriority @default(NORMAL) @map("priority_level")
+  isOverridden   Boolean            @default(false) @map("is_overridden")
+  reviewedAt     DateTime?          @map("reviewed_at") @db.Timestamptz
+  updatedAt      DateTime           @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relation link
+  document       Document           @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("verification_matrix")
+}
+
+model AuditLog {
+  id          BigInt   @id @default(autoincrement())
+  documentId  String   @map("document_id") @db.Uuid
+  action      String   @db.VarChar(100)
+  performedBy String   @default("SYSTEM_WORKER") @map("performed_by") @db.VarChar(100)
+  changedFrom String?  @map("changed_from") @db.VarChar(50)
+  changedTo   String?  @map("changed_to") @db.VarChar(50)
+  timestamp   DateTime @default(now()) @db.Timestamptz
+
+  // Relation link
+  document    Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@map("audit_logs")
+}
